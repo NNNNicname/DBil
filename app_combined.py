@@ -3,7 +3,6 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-from scipy.interpolate import interp1d
 
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
@@ -23,13 +22,19 @@ DBIL_PARAMS = np.array([
     [159.157,    53.316,  -18.028 ],
 ])
 
-# TBA – cubic  (intercept, linear, quadratic, cubic)
+# TBA – mixed polynomial order per group
+# Format: (intercept, t^1, t^2)  — quadratic coefficient = 0 for linear groups
+# Group 1: linear    (intercept=125.259,  t=-15.463,   t²=0)
+# Group 2: quadratic (intercept=240.087,  t=-148.345,  t²=43.879)
+# Group 3: quadratic (intercept=143.3886, t=-41.0240,  t²=12.6514)
+# Group 4: linear    (intercept=198.822,  t=-18.250,   t²=0)
+# Group 5: linear    (intercept=165.159,  t=34.684,    t²=0)
 TBA_PARAMS = np.array([
-    [205.862,  -140.332,   54.958,   -7.189],
-    [ -4.943,   253.300, -146.564,   26.698],
-    [145.1073,  -43.2551,  13.4262,   0.0  ],
-    [318.078,  -207.331,   84.979,  -11.307],
-    [ 81.980,   154.438,  -55.981,    7.915],
+    [125.259,   -15.463,    0.0    ],   # Group 1 – linear
+    [240.087,  -148.345,   43.879  ],   # Group 2 – quadratic
+    [143.3886,  -41.0240,  12.6514 ],   # Group 3 – quadratic
+    [198.822,   -18.250,    0.0    ],   # Group 4 – linear
+    [165.159,    34.684,    0.0    ],   # Group 5 – linear
 ])
 
 N_GROUPS    = 5
@@ -81,16 +86,32 @@ BASEHAZ_H0 = np.array([
     0.379942634,
 ], dtype=float)
 
-_h0_interp = interp1d(
-    BASEHAZ_TIME, BASEHAZ_H0, kind='previous',
-    bounds_error=False, fill_value=(BASEHAZ_H0[0], BASEHAZ_H0[-1])
-)
+# 自定义前向插值函数（替代 scipy.interpolate.interp1d 的 kind='previous'）
+def h0_interp(t):
+    """
+    对于每个 t，返回小于等于 t 的最大 BASEHAZ_TIME 对应的 BASEHAZ_H0。
+    支持标量或数组输入，输出形状与输入一致。
+    """
+    t = np.asarray(t)
+    # 找到每个 t 在 BASEHAZ_TIME 中的插入位置（右侧），减 1 得到左侧索引
+    idx = np.searchsorted(BASEHAZ_TIME, t, side='right') - 1
+    # 边界处理：小于最小时间点的索引为 -1，取 0；大于最大时间点的索引为 len-1
+    idx = np.clip(idx, 0, len(BASEHAZ_TIME)-1)
+    result = BASEHAZ_H0[idx]
+    # 若输入为标量，返回标量值
+    if result.ndim == 0:
+        return float(result)
+    return result
+
+# 使用自定义插值函数
+_h0_interp = h0_interp
 
 # ════════════════════════════════════════════════════════════
 # 3.  CORE FUNCTIONS
 # ════════════════════════════════════════════════════════════
 
 def predict_quadratic(t, p):
+    """Works for both linear (p[2]=0) and quadratic groups."""
     return p[0] + p[1]*t + p[2]*t**2
 
 def predict_cubic(t, p):
@@ -118,8 +139,8 @@ def survival_curve(lp: float, t_grid: np.ndarray) -> np.ndarray:
     return np.exp(-_h0_interp(t_grid) * np.exp(lp))
 
 def nls_prob(lp: float, months: float) -> float:
-    h0 = float(_h0_interp(np.array([months])))
-    return float(1.0 - np.exp(-h0 * np.exp(lp)))
+    h0 = _h0_interp(months)
+    return 1.0 - np.exp(-h0 * np.exp(lp))
 
 def draw_trajectory(ax, values, param_matrix, poly, ylabel, title, pt_label):
     fn = predict_quadratic if poly == 'quadratic' else predict_cubic
@@ -178,7 +199,7 @@ with c1:
 with c2:
     st.subheader("TBA Trajectory")
     fig2, ax2 = plt.subplots(figsize=(5.5, 3.8))
-    draw_trajectory(ax2, tba_vals, TBA_PARAMS, 'cubic',
+    draw_trajectory(ax2, tba_vals, TBA_PARAMS, 'quadratic',
                     'TBA (μmol/L)', 'TBA — GBTM 5-Group', 'This patient')
     plt.tight_layout(); st.pyplot(fig2); plt.close(fig2)
 
@@ -191,7 +212,7 @@ if run:
 
     # ── 5a. GBTM grouping ────────────────────────────────────
     gy, dbil_probs = calc_group(dbil_vals, DBIL_PARAMS, 'quadratic')
-    gx, tba_probs  = calc_group(tba_vals,  TBA_PARAMS,  'cubic')
+    gx, tba_probs  = calc_group(tba_vals,  TBA_PARAMS,  'quadratic')
     lp             = lp_value(gy, gx)
 
     col_d, col_t, col_cp = st.columns(3)
