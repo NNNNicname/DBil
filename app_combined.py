@@ -7,7 +7,7 @@ import matplotlib.ticker as mticker
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
-st.set_page_config(page_title="BA-NLS Predictor", layout="wide")
+st.set_page_config(page_title="BA-Native Liver Survival Predictor", layout="wide")
 
 # ════════════════════════════════════════════════════════════
 # 1.  GBTM MODEL PARAMETERS
@@ -86,24 +86,18 @@ BASEHAZ_H0 = np.array([
     0.379942634,
 ], dtype=float)
 
-# 自定义前向插值函数（替代 scipy.interpolate.interp1d 的 kind='previous'）
 def h0_interp(t):
     """
-    对于每个 t，返回小于等于 t 的最大 BASEHAZ_TIME 对应的 BASEHAZ_H0。
-    支持标量或数组输入，输出形状与输入一致。
     """
     t = np.asarray(t)
-    # 找到每个 t 在 BASEHAZ_TIME 中的插入位置（右侧），减 1 得到左侧索引
     idx = np.searchsorted(BASEHAZ_TIME, t, side='right') - 1
-    # 边界处理：小于最小时间点的索引为 -1，取 0；大于最大时间点的索引为 len-1
     idx = np.clip(idx, 0, len(BASEHAZ_TIME)-1)
     result = BASEHAZ_H0[idx]
-    # 若输入为标量，返回标量值
     if result.ndim == 0:
         return float(result)
     return result
 
-# 使用自定义插值函数
+
 _h0_interp = h0_interp
 
 # ════════════════════════════════════════════════════════════
@@ -160,7 +154,7 @@ def draw_trajectory(ax, values, param_matrix, poly, ylabel, title, pt_label):
 # 4.  PAGE LAYOUT
 # ════════════════════════════════════════════════════════════
 
-st.title("BA-NLS Predictor")
+st.title("BA-Native Liver Survival Predictor")
 st.markdown(
     "Prognostic stratification based on postoperative **DBil** and **TBA** "
     "trajectories in biliary atresia — powered by GBTM + Cox regression."
@@ -234,18 +228,18 @@ if run:
         }), hide_index=True, use_container_width=True)
 
     with col_cp:
-        st.markdown("#### NLS Cumulative Probability")
+        st.markdown("#### non-Native Liver Survival Cumulative Probability")
         checkpoints = [12, 24, 36, 60]
         st.dataframe(pd.DataFrame({
             'Time Point': [f'{m} months' for m in checkpoints],
-            'NLS Prob (%)': [f'{nls_prob(lp, m)*100:.1f}%' for m in checkpoints],
-            'NLS-Free (%)': [f'{(1-nls_prob(lp, m))*100:.1f}%' for m in checkpoints],
+            'non-Native Liver Survival Prob (%)': [f'{nls_prob(lp, m)*100:.1f}%' for m in checkpoints],
+            'Native Liver Survival (%)': [f'{(1-nls_prob(lp, m))*100:.1f}%' for m in checkpoints],
         }), hide_index=True, use_container_width=True)
         st.caption(f"LP = {lp:.4f}  |  ref: group.y=1, group.x=1")
 
     # ── 5b. Survival curve ───────────────────────────────────
     st.divider()
-    st.subheader("Cox Survival Curve — NLS-Free Survival")
+    st.subheader("Cox Survival Curve — Native Liver Survival")
 
     t_grid = np.linspace(4, 112, 400)
     fig3, ax3 = plt.subplots(figsize=(9, 4.8))
@@ -281,8 +275,8 @@ if run:
         )
 
     ax3.set_xlabel('Time (months)', fontsize=11)
-    ax3.set_ylabel('NLS-Free Survival (%)', fontsize=11)
-    ax3.set_title('Cox Model: NLS-Free Survival Probability', fontsize=12,
+    ax3.set_ylabel('Native Liver Survival (%)', fontsize=11)
+    ax3.set_title('Cox Model: Native Liver Survival Probability', fontsize=12,
                   fontweight='bold')
     ax3.set_xlim(0, 115); ax3.set_ylim(0, 105)
     ax3.yaxis.set_major_formatter(mticker.FormatStrFormatter('%g%%'))
@@ -301,9 +295,9 @@ if run:
             rows.append({
                 'group.y (DBil)': f'Traj {_gy}',
                 'group.x (TBA)':  f'Traj {_gx}',
-                'NLS @ 12m':      f'{nls_prob(_lp,12)*100:.1f}%',
-                'NLS @ 36m':      f'{nls_prob(_lp,36)*100:.1f}%',
-                'NLS @ 60m':      f'{nls_prob(_lp,60)*100:.1f}%',
+                'non-Native Liver Survival @ 12m':      f'{nls_prob(_lp,12)*100:.1f}%',
+                'non-Native Liver Survival @ 36m':      f'{nls_prob(_lp,36)*100:.1f}%',
+                'non-Native Liver Survival @ 60m':      f'{nls_prob(_lp,60)*100:.1f}%',
                 '':               '◀ This patient' if (_gy==gy and _gx==gx) else '',
             })
 
@@ -318,7 +312,7 @@ if run:
         use_container_width=True, hide_index=True, height=340
     )
     st.caption(
-        "NLS probability = 1 − exp(−H₀(t) · exp(LP))  "
+        "non-Native Liver Survival probability = 1 − exp(−H₀(t) · exp(LP))  "
         "| LP = Σ β · group indicator"
     )
 
